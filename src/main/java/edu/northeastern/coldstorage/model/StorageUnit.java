@@ -88,6 +88,17 @@ public final class StorageUnit {
         return readingCount == 0 ? Double.NaN : sumSquaredDiffs / readingCount;
     }
 
+    /**
+     * Returns the running population standard deviation, or NaN if no readings yet.
+     * Tiny negative variances caused by floating-point rounding are treated as zero.
+     */
+    public double getStandardDeviation() {
+        if (readingCount == 0) {
+            return Double.NaN;
+        }
+        return Math.sqrt(Math.max(0.0, getVariance()));
+    }
+
     public double getMinTemperature() {
         return readingCount == 0 ? Double.NaN : minTemperature;
     }
