@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 
 class ColdStorageDataReaderTest {
 
+    private static final int EXPECTED_HIGH_FREQUENCY_ROWS = 10075; // (Count - 1)
     private static final String HEADER =
             "id,room_id,noted_date,temp,humidity,anomaly,location,spoilage_risk\n";
 
@@ -80,6 +81,78 @@ class ColdStorageDataReaderTest {
         assertEquals(1, readings.size());
         assertEquals(1, readings.get(0).getId());
         assertEquals(0, reader.getSkippedRowCount());
+    }
+
+    @Test
+    void valuesWithSurroundingSpacesAreTrimmed() throws IOException {
+        String csv = "id, room_id, noted_date, temp, humidity\n"
+                + " 7 , Cold_Storage_B , 2024-03-01 10:00:00 , 3.5 , 85.0 \n";
+
+        List<SensorReading> readings = reader.read(new StringReader(csv));
+
+        assertEquals(1, readings.size());
+        SensorReading reading = readings.get(0);
+        assertEquals(7, reading.getId());
+        assertEquals("Cold_Storage_B", reading.getRoomId());
+        assertEquals(LocalDateTime.of(2024, 3, 1, 10, 0), reading.getTimestamp());
+        assertEquals(3.5, reading.getTemperature(), 1e-9);
+        assertEquals(85.0, reading.getHumidity(), 1e-9);
+        assertEquals(0, reader.getSkippedRowCount());
+    }
+
+    @Test
+    void windowsLineEndingsAreHandled() throws IOException {
+        String csv = "id,room_id,noted_date,temp,humidity\r\n"
+                + "1,Cold_Storage_A,2024-01-01 00:00:00,3.0,80.0\r\n"
+                + "2,Cold_Storage_B,2024-01-01 01:00:00,4.5,82.5\r\n";
+
+        List<SensorReading> readings = reader.read(new StringReader(csv));
+
+        assertEquals(2, readings.size());
+        assertEquals(0, reader.getSkippedRowCount());
+        assertEquals(80.0, readings.get(0).getHumidity(), 1e-9);
+        assertEquals(82.5, readings.get(1).getHumidity(), 1e-9);
+        assertEquals("Cold_Storage_B", readings.get(1).getRoomId());
+    }
+
+
+    /**
+     * Checks that the reader supports the second dataset, cold_storage_high_frequency.csv.
+     * It has different extra columns from IoT.csv, but the same five required columns
+     * and the same timestamp format, so it must load completely.
+     */
+    @Test
+    void highFrequencyDatasetLoads() throws IOException {
+        List<SensorReading> readings = reader.readFromResource("cold_storage_high_frequency.csv");
+
+        assertEquals(EXPECTED_HIGH_FREQUENCY_ROWS, readings.size());
+        assertEquals(0, reader.getSkippedRowCount());
+
+        SensorReading first = readings.get(0);
+        assertEquals(6, first.getId());
+        assertEquals(LocalDateTime.of(2024, 3, 1, 0, 5), first.getTimestamp());
+        assertEquals(3.72, first.getTemperature(), 0.01);
+
+        for (SensorReading reading : readings) {
+            assertEquals("Cold_Storage_RealTime", reading.getRoomId());
+        }
+    }
+
+
+    /**
+     * The simulator in Phase 3 will replay this dataset as a live sensor, so the
+     * readings must be in time order. This test checks that each reading is exactly
+     * one minute after the previous one.
+     */
+    @Test
+    void highFrequencyReadingsAreOneMinuteApart() throws IOException {
+        List<SensorReading> readings = reader.readFromResource("cold_storage_high_frequency.csv");
+
+        for (int i = 1; i < readings.size(); i++) {
+            LocalDateTime expected = readings.get(i - 1).getTimestamp().plusMinutes(1);
+            assertEquals(expected, readings.get(i).getTimestamp(),
+                    "reading " + i + " is not one minute after the previous one");
+        }
     }
 
     @Test
