@@ -69,6 +69,19 @@ class ColdStorageDataReaderTest {
         assertEquals(3.5, reading.getTemperature(), 1e-9);
     }
 
+    //BOM — невидимый символ \uFEFF
+    @Test
+    void headerWithByteOrderMarkIsRead() throws IOException {
+        String csv = "\uFEFF" + "id,room_id,noted_date,temp,humidity\n"
+                + "1,Cold_Storage_A,2024-01-01 00:00:00,3.0,80.0\n";
+
+        List<SensorReading> readings = reader.read(new StringReader(csv));
+
+        assertEquals(1, readings.size());
+        assertEquals(1, readings.get(0).getId());
+        assertEquals(0, reader.getSkippedRowCount());
+    }
+
     @Test
     void missingRequiredColumnIsRejected() {
         String csv = "id,room_id,noted_date,humidity\n1,A,2024-01-01 00:00:00,80\n";
