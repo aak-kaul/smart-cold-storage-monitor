@@ -147,7 +147,7 @@ Audit log: 2576 entries written to logs/audit.log, integrity check: PASSED
 
 | Member | Contributions This Phase |
 |---|---|
-| Aakriti Kaul | Created the GitHub repository, Maven project and package structure; integrated the Kaggle dataset; implemented the core use case: `SensorReading`, `StorageUnit`, `Alert`, `ComplianceStatus`, `MonitoringReport`, `ColdStorageDataReader`, `ComplianceChecker`, `StatisticsCalculator`, `MonitorController`, `AlertListener`, `ConsoleAlertView`, `AuditLogger`, `AuditEntry` and `Main`; wrote the 33 JUnit tests; wrote the README |
+| Aakriti Kaul | Created the GitHub repository, Maven project and package structure; integrated the Kaggle dataset; implemented the core use case: `SensorReading`, `StorageUnit`, `Alert`, `ComplianceStatus`, `MonitoringReport`, `ComplianceChecker`, `StatisticsCalculator`, `MonitorController`, `AlertListener`, `AuditLogger`, `AuditEntry` and `Main`; wrote the 33 JUnit tests; wrote the README |
 | Yazi Zhang | Wrote `StorageUnitTest`, which verifies the running mean and variance for each storage room and checks that readings from the wrong room are rejected; added a `getStandardDeviation()` method to `StorageUnit` with tests |
 | Anqi Zhou | Wrote `ConsoleAlertViewTest`, which verifies that alerts are printed with their status colour and that the alert display limit and "... and N more alerts" message work correctly; improved the layout of the console monitoring summary, updated `ConsoleAlertView` |
 | Togzhan Usseiin | Extended `ColdStorageDataReader` to support the `cold_storage_high_frequency.csv` dataset, with tests; added tests for CSV files that contain a byte-order mark or extra spaces around values |
