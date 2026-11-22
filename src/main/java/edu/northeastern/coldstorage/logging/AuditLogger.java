@@ -142,6 +142,9 @@ public final class AuditLogger implements AlertListener {
         try {
             fileWriter.write(entry.toString());
             fileWriter.newLine();
+            // Flush every entry: in the long-running web/desktop modes the program is usually
+            // stopped with Ctrl+C or by closing the window, and no audit entry may be lost.
+            fileWriter.flush();
         } catch (IOException e) {
             throw new UncheckedIOException("Could not write audit log", e);
         }

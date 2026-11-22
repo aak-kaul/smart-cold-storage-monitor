@@ -1,44 +1,46 @@
 package edu.northeastern.coldstorage.command;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import edu.northeastern.coldstorage.controller.MonitorController;
 import edu.northeastern.coldstorage.logging.AuditEntry;
 import edu.northeastern.coldstorage.logging.AuditLogger;
+import edu.northeastern.coldstorage.ml.ComplianceChecker;
 import edu.northeastern.coldstorage.ml.LinearRegressionPredictor;
 import edu.northeastern.coldstorage.ml.MovingAveragePredictor;
-import edu.northeastern.coldstorage.ml.PredictionService;
+import edu.northeastern.coldstorage.ml.PredictionModel;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 class ChangePredictorCommandTest {
 
-    private PredictionService service;
+    private MonitorController controller;
     private CommandInvoker invoker;
     private AuditLogger audit;
 
     @BeforeEach
     void setUp() {
-        service = new PredictionService();
+        controller = new MonitorController(new ComplianceChecker());
         audit = AuditLogger.getInstance();
         invoker = new CommandInvoker(audit);
     }
 
     @Test
     void switchesThePredictionModel() {
-        MovingAveragePredictor average = new MovingAveragePredictor(4);
-        String result = invoker.execute("tester", new ChangePredictorCommand(service, average));
+        String result = invoker.execute("tester",
+                new ChangePredictorCommand(controller, PredictionModel.LINEAR_REGRESSION));
 
-        assertSame(average, service.getPredictor());
-        assertEquals("Prediction model changed from Linear regression to Moving average (4)", result);
+        assertInstanceOf(LinearRegressionPredictor.class, controller.getPredictor());
+        assertEquals("Prediction model set to Linear regression", result);
     }
 
     @Test
     void changeIsRecordedInAuditLogAndHistory() {
-        invoker.execute("web", new ChangePredictorCommand(service, new MovingAveragePredictor()));
+        invoker.execute("web", new ChangePredictorCommand(controller, PredictionModel.MOVING_AVERAGE));
 
         List<AuditEntry> entries = audit.getEntries();
         AuditEntry last = entries.get(entries.size() - 1);
@@ -50,15 +52,15 @@ class ChangePredictorCommandTest {
 
     @Test
     void canSwitchBack() {
-        LinearRegressionPredictor regression = new LinearRegressionPredictor();
-        invoker.execute("desktop", new ChangePredictorCommand(service, new MovingAveragePredictor()));
-        invoker.execute("desktop", new ChangePredictorCommand(service, regression));
-        assertSame(regression, service.getPredictor());
+        invoker.execute("desktop", new ChangePredictorCommand(controller, PredictionModel.LINEAR_REGRESSION));
+        invoker.execute("desktop", new ChangePredictorCommand(controller, PredictionModel.MOVING_AVERAGE));
+        assertInstanceOf(MovingAveragePredictor.class, controller.getPredictor());
     }
 
     @Test
     void nullArgumentsAreRejected() {
-        assertThrows(NullPointerException.class, () -> new ChangePredictorCommand(null, new LinearRegressionPredictor()));
-        assertThrows(NullPointerException.class, () -> new ChangePredictorCommand(service, null));
+        assertThrows(NullPointerException.class,
+                () -> new ChangePredictorCommand(null, PredictionModel.LINEAR_REGRESSION));
+        assertThrows(NullPointerException.class, () -> new ChangePredictorCommand(controller, null));
     }
 }

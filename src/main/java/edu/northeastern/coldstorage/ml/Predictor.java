@@ -8,12 +8,19 @@ import java.util.List;
  * <p>The forecaster only depends on this interface, so models can be swapped at runtime
  * (for example from the desktop GUI) without changing any other code.
  */
-public interface Predictor {
+public interface Predictor extends TemperaturePredictor {
 
     /** Human-readable model name, e.g. "Linear regression". */
     String name();
 
+    /** Same as {@link #name()}, so every model also works with {@link PredictionService}. */
+    @Override
+    default String getName() {
+        return name();
+    }
+
     /** The fewest past temperatures this model needs to make a prediction. */
+    @Override
     int minimumHistory();
 
     /**
@@ -24,5 +31,6 @@ public interface Predictor {
      * @return the predicted temperature in °C
      * @throws IllegalArgumentException if there is too little history or stepsAhead is below 1
      */
+    @Override
     double predict(List<Double> history, int stepsAhead);
 }

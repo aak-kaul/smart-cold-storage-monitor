@@ -62,7 +62,7 @@ class PredictionServiceTest {
         recordAll(ROOM_A, 2.0, 2.5, 3.0, 3.5);
         service.setPredictor(new MovingAveragePredictor(4));
         assertEquals(2.75, service.predict(ROOM_A, 1).getAsDouble(), EPS);
-        assertEquals("Moving average (4)", service.getPredictor().getName());
+        assertEquals("Moving average", service.getPredictor().getName());
     }
 
     @Test
@@ -99,12 +99,12 @@ class PredictionServiceTest {
             unit.record(reading(ROOM_A, t), ComplianceStatus.COMPLIANT);
         }
         Forecast next = service.forecast(unit, 1).get();
-        assertEquals(ROOM_A, next.getRoomId());
-        assertEquals("Linear regression", next.getModelName());
-        assertEquals(1, next.getStepsAhead());
-        assertEquals(4.0, next.getPredictedTemperature(), EPS);
-        assertEquals(ComplianceStatus.COMPLIANT, next.getPredictedStatus());
-        assertEquals(ComplianceStatus.WARNING, service.forecast(unit, 2).get().getPredictedStatus());
+        assertEquals(ROOM_A, next.roomId());
+        assertEquals("Linear regression", next.modelName());
+        assertEquals(1, next.stepsAhead());
+        assertEquals(4.0, next.predictedTemperature(), EPS);
+        assertEquals(ComplianceStatus.COMPLIANT, next.predictedStatus());
+        assertEquals(ComplianceStatus.WARNING, service.forecast(unit, 2).get().predictedStatus());
     }
 
     @Test
@@ -114,7 +114,7 @@ class PredictionServiceTest {
         for (double t : new double[] {50.0, 50.0, 3.0, 3.0, 3.0, 3.0}) {
             unit.record(reading(ROOM_A, t), ComplianceStatus.COMPLIANT);
         }
-        assertEquals(3.0, service.forecast(unit, 1).get().getPredictedTemperature(), EPS);
+        assertEquals(3.0, service.forecast(unit, 1).get().predictedTemperature(), EPS);
     }
 
     @Test

@@ -83,12 +83,13 @@ public class PredictionService {
     /**
      * Predicts a room's temperature a number of readings ahead.
      *
-     * @return the prediction, or empty if the room has no readings yet
+     * @return the prediction, or empty if the room has fewer readings than the model needs
      * @throws IllegalArgumentException if stepsAhead is less than 1
      */
     public synchronized OptionalDouble predict(String roomId, int stepsAhead) {
+        requireStepsAhead(stepsAhead);
         Deque<Double> history = historyByRoom.get(roomId);
-        if (history == null || history.isEmpty()) {
+        if (history == null || history.size() < predictor.minimumHistory()) {
             return OptionalDouble.empty();
         }
         return OptionalDouble.of(predictor.predict(new ArrayList<>(history), stepsAhead));
@@ -121,14 +122,15 @@ public class PredictionService {
      */
     public synchronized Optional<Forecast> forecast(StorageUnit unit, int stepsAhead) {
         Objects.requireNonNull(unit, "unit must not be null");
+        requireStepsAhead(stepsAhead);
         List<Double> recent = unit.getRecentTemperatures();
-        if (recent.isEmpty()) {
+        if (recent.isEmpty() || recent.size() < predictor.minimumHistory()) {
             return Optional.empty();
         }
         List<Double> window = recent.subList(Math.max(0, recent.size() - historySize), recent.size());
         double predicted = predictor.predict(window, stepsAhead);
-        return Optional.of(new Forecast(unit.getRoomId(), predictor.getName(), stepsAhead,
-                predicted, checker.classify(predicted)));
+        return Optional.of(new Forecast(unit.getRoomId(), predicted, checker.classify(predicted),
+                predictor.getName(), stepsAhead));
     }
 
     /** Returns the rooms that have at least one reading, in no particular order. */
@@ -144,5 +146,11 @@ public class PredictionService {
 
     public int getHistorySize() {
         return historySize;
+    }
+
+    private static void requireStepsAhead(int stepsAhead) {
+        if (stepsAhead < 1) {
+            throw new IllegalArgumentException("stepsAhead must be at least 1");
+        }
     }
 }

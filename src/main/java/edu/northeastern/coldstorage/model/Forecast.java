@@ -18,6 +18,12 @@ public record Forecast(String roomId, double predictedTemperature, ComplianceSta
         Objects.requireNonNull(roomId, "roomId must not be null");
         Objects.requireNonNull(predictedStatus, "predictedStatus must not be null");
         Objects.requireNonNull(modelName, "modelName must not be null");
+        if (stepsAhead < 1) {
+            throw new IllegalArgumentException("stepsAhead must be at least 1");
+        }
+        if (!Double.isFinite(predictedTemperature)) {
+            throw new IllegalArgumentException("predictedTemperature must be a finite number");
+        }
     }
 
     /** True if the room is predicted to leave the safe range (spoilage risk). */

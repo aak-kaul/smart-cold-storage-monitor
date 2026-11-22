@@ -24,6 +24,11 @@ public interface TemperaturePredictor {
      */
     double predict(List<Double> history, int stepsAhead);
 
+    /** The fewest past temperatures this model needs; 1 unless a model says otherwise. */
+    default int minimumHistory() {
+        return 1;
+    }
+
     /** Shared argument check for implementations. */
     static void validate(List<Double> history, int stepsAhead) {
         if (history == null || history.isEmpty()) {
