@@ -1,17 +1,16 @@
 package edu.northeastern.coldstorage.ml;
 
 import java.util.List;
+import java.util.Objects;
 
 /**
- * Predicts that the temperature will equal the average of the last few readings.
+ * Predicts that the temperature will stay at the average of the most recent readings.
  *
- * <p>This is a simple baseline model. It smooths out short spikes and is hard to fool
- * with noisy data, but it ignores trends, so its forecast is the same for every
- * {@code stepsAhead}.
+ * <p>Simple and stable: it ignores trends, so it is less fooled by a single noisy reading.
  */
-public final class MovingAveragePredictor implements TemperaturePredictor {
+public class MovingAveragePredictor implements Predictor {
 
-    /** Default number of recent readings to average. */
+    /** Default number of recent readings that are averaged. */
     public static final int DEFAULT_WINDOW = 6;
 
     private final int window;
@@ -22,10 +21,9 @@ public final class MovingAveragePredictor implements TemperaturePredictor {
     }
 
     /**
-     * Creates a predictor that averages the last {@code window} readings.
+     * Creates a predictor with a custom window.
      *
-     * @param window how many recent readings to average; must be at least 1
-     * @throws IllegalArgumentException if window is less than 1
+     * @param window how many recent readings to average (at least 1)
      */
     public MovingAveragePredictor(int window) {
         if (window < 1) {
@@ -35,22 +33,42 @@ public final class MovingAveragePredictor implements TemperaturePredictor {
     }
 
     @Override
-    public String getName() {
-        return "Moving average (" + window + ")";
+    public String name() {
+        return "Moving average";
+    }
+
+    @Override
+    public int minimumHistory() {
+        return 1;
     }
 
     @Override
     public double predict(List<Double> history, int stepsAhead) {
-        TemperaturePredictor.validate(history, stepsAhead);
-        int from = Math.max(0, history.size() - window);
+        PredictorChecks.check(history, minimumHistory(), stepsAhead);
+        List<Double> recent = history.subList(Math.max(0, history.size() - window), history.size());
         double sum = 0;
-        for (int i = from; i < history.size(); i++) {
-            sum += history.get(i);
+        for (double t : recent) {
+            sum += t;
         }
-        return sum / (history.size() - from);
+        return sum / recent.size();
     }
 
     public int getWindow() {
         return window;
+    }
+
+    @Override
+    public String toString() {
+        return name() + " (last " + window + " readings)";
+    }
+
+    @Override
+    public boolean equals(Object o) {
+        return o instanceof MovingAveragePredictor && ((MovingAveragePredictor) o).window == window;
+    }
+
+    @Override
+    public int hashCode() {
+        return Objects.hash("moving-average", window);
     }
 }

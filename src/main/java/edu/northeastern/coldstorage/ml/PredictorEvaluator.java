@@ -1,112 +1,74 @@
 package edu.northeastern.coldstorage.ml;
 
-import java.util.Collection;
+import edu.northeastern.coldstorage.model.SensorReading;
+import edu.northeastern.coldstorage.model.StorageUnit;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
 /**
- * Measures how accurate prediction models are on past data (backtesting), so the
- * team or an operator can choose the best {@link TemperaturePredictor} for a dataset.
+ * Measures how accurate a prediction model is on real data, so we can compare models
+ * with numbers instead of guessing.
  *
- * <p>For every reading after the first {@code historySize}, the model predicts it from the
- * {@code historySize} readings before it, and the absolute error is recorded. The score is
- * the mean absolute error (MAE) in degrees Celsius; lower is better.
+ * <p>It replays each room's readings in order ("walk-forward"): at every point it asks
+ * the model to predict a reading it has not seen yet, then compares with the real value.
+ * The result is the mean absolute error (MAE) in °C: lower is better.
  */
-public class PredictorEvaluator {
+public final class PredictorEvaluator {
 
-    private final int historySize;
-
-    /**
-     * Creates an evaluator.
-     *
-     * @param historySize how many previous readings each prediction may use; at least 1
-     * @throws IllegalArgumentException if historySize is less than 1
-     */
-    public PredictorEvaluator(int historySize) {
-        if (historySize < 1) {
-            throw new IllegalArgumentException("historySize must be at least 1");
-        }
-        this.historySize = historySize;
-    }
-
-    public int getHistorySize() {
-        return historySize;
+    private PredictorEvaluator() {
     }
 
     /**
-     * Returns a model's mean absolute error on one series of temperatures.
+     * Computes the walk-forward mean absolute error for one sequence of temperatures.
      *
-     * @param model        the model to evaluate
-     * @param temperatures past temperatures in time order
-     * @return the mean absolute error, or NaN if there are not enough temperatures
+     * @param predictor    the model to test
+     * @param temperatures temperatures in time order
+     * @param stepsAhead   how far ahead each prediction looks
+     * @return the mean absolute error in °C
+     * @throws IllegalArgumentException if the sequence is too short to make any prediction
      */
-    public double meanAbsoluteError(TemperaturePredictor model, List<Double> temperatures) {
-        Objects.requireNonNull(model, "model must not be null");
+    public static double meanAbsoluteError(Predictor predictor, List<Double> temperatures, int stepsAhead) {
+        Objects.requireNonNull(predictor, "predictor must not be null");
         Objects.requireNonNull(temperatures, "temperatures must not be null");
         double totalError = 0;
         int predictions = 0;
-        for (int i = historySize; i < temperatures.size(); i++) {
-            double predicted = model.predict(temperatures.subList(i - historySize, i), 1);
-            totalError += Math.abs(predicted - temperatures.get(i));
+        // 'end' is how many readings the model may see; the target is stepsAhead readings later.
+        for (int end = predictor.minimumHistory(); end - 1 + stepsAhead < temperatures.size(); end++) {
+            // Only give the model the same amount of history a StorageUnit keeps.
+            List<Double> history = temperatures.subList(Math.max(0, end - StorageUnit.HISTORY_SIZE), end);
+            double predicted = predictor.predict(history, stepsAhead);
+            double actual = temperatures.get(end - 1 + stepsAhead);
+            totalError += Math.abs(predicted - actual);
             predictions++;
         }
-        return predictions == 0 ? Double.NaN : totalError / predictions;
+        if (predictions == 0) {
+            throw new IllegalArgumentException("Not enough temperatures to evaluate the model");
+        }
+        return totalError / predictions;
     }
 
     /**
-     * Returns a model's mean absolute error averaged over several series (e.g. one per room).
-     * Series that are too short to evaluate are skipped.
+     * Evaluates a model on a whole dataset, treating each room as its own time series
+     * and averaging the rooms' errors.
      *
-     * @return the average error, or NaN if no series could be evaluated
+     * @param predictor  the model to test
+     * @param readings   readings for one or more rooms, in time order
+     * @param stepsAhead how far ahead each prediction looks
+     * @return the average of the rooms' mean absolute errors, in °C
      */
-    public double averageError(TemperaturePredictor model, Collection<List<Double>> series) {
-        Objects.requireNonNull(series, "series must not be null");
-        double total = 0;
-        int counted = 0;
-        for (List<Double> temperatures : series) {
-            double mae = meanAbsoluteError(model, temperatures);
-            if (!Double.isNaN(mae)) {
-                total += mae;
-                counted++;
-            }
+    public static double meanAbsoluteErrorByRoom(Predictor predictor, List<SensorReading> readings,
+                                                 int stepsAhead) {
+        Map<String, List<Double>> byRoom = new LinkedHashMap<>();
+        for (SensorReading r : readings) {
+            byRoom.computeIfAbsent(r.getRoomId(), k -> new ArrayList<>()).add(r.getTemperature());
         }
-        return counted == 0 ? Double.NaN : total / counted;
-    }
-
-    /**
-     * Scores every model on the same data.
-     *
-     * @return each model's average error, in the same order as {@code models}
-     */
-    public Map<TemperaturePredictor, Double> compare(List<TemperaturePredictor> models,
-                                                     Collection<List<Double>> series) {
-        Objects.requireNonNull(models, "models must not be null");
-        Map<TemperaturePredictor, Double> scores = new LinkedHashMap<>();
-        for (TemperaturePredictor model : models) {
-            scores.put(model, averageError(model, series));
+        double sum = 0;
+        for (List<Double> series : byRoom.values()) {
+            sum += meanAbsoluteError(predictor, series, stepsAhead);
         }
-        return scores;
-    }
-
-    /**
-     * Returns the model with the lowest average error.
-     *
-     * @throws IllegalArgumentException if models is empty or no model could be evaluated
-     */
-    public TemperaturePredictor findBest(List<TemperaturePredictor> models, Collection<List<Double>> series) {
-        TemperaturePredictor best = null;
-        double bestError = Double.POSITIVE_INFINITY;
-        for (Map.Entry<TemperaturePredictor, Double> score : compare(models, series).entrySet()) {
-            if (!Double.isNaN(score.getValue()) && score.getValue() < bestError) {
-                best = score.getKey();
-                bestError = score.getValue();
-            }
-        }
-        if (best == null) {
-            throw new IllegalArgumentException("no model could be evaluated on this data");
-        }
-        return best;
+        return sum / byRoom.size();
     }
 }

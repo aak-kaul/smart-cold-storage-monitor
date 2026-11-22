@@ -3,6 +3,7 @@ package edu.northeastern.coldstorage.view;
 import edu.northeastern.coldstorage.controller.AlertListener;
 import edu.northeastern.coldstorage.model.Alert;
 import edu.northeastern.coldstorage.model.ComplianceStatus;
+import edu.northeastern.coldstorage.model.Forecast;
 import edu.northeastern.coldstorage.model.MonitoringReport;
 import edu.northeastern.coldstorage.model.StorageUnit;
 import java.io.PrintStream;
@@ -10,7 +11,8 @@ import java.util.Objects;
 
 /**
  * Text "dashboard" for the console. Prints alerts as they arrive (Observer pattern)
- * and a summary report at the end. A JavaFX/Swing view will replace this later.
+ * and a summary report at the end. The Swing desktop dashboard and web dashboard are the
+ * graphical views; this console view stays for batch runs and quick checks.
  */
 public class ConsoleAlertView implements AlertListener {
 
@@ -52,7 +54,7 @@ public class ConsoleAlertView implements AlertListener {
         return alertsReceived;
     }
 
-    /** Prints the end-of-run summary in three sections: overview, status breakdown, rooms. */
+    /** Prints the end-of-run summary: overview, status breakdown, rooms, forecasts, contractor. */
     public void showReport(MonitoringReport report) {
         Objects.requireNonNull(report, "report must not be null");
         if (alertsReceived > maxAlertsToPrint) {
@@ -65,6 +67,7 @@ public class ConsoleAlertView implements AlertListener {
         printOverview(report);
         printStatusBreakdown(report);
         printRoomTable(report);
+        printForecasts(report);
         printContractorResult(report);
         out.println(DIVIDER);
     }
@@ -101,6 +104,22 @@ public class ConsoleAlertView implements AlertListener {
                     unit.getCount(ComplianceStatus.COMPLIANT),
                     unit.getCount(ComplianceStatus.WARNING),
                     unit.getCount(ComplianceStatus.NON_COMPLIANT));
+        }
+    }
+
+    /** Prints each room's predicted temperature; skipped when no room has enough history. */
+    private void printForecasts(MonitoringReport report) {
+        if (report.getForecasts().isEmpty()) {
+            return;
+        }
+        Forecast first = report.getForecasts().get(0);
+        out.println();
+        out.printf("FORECAST (%s, %d readings ahead)%n", first.modelName(), first.stepsAhead());
+        out.println(THIN_DIVIDER);
+        for (Forecast forecast : report.getForecasts()) {
+            out.printf("  %-16s %8.2f C  %-14s %s%n", forecast.roomId(), forecast.predictedTemperature(),
+                    forecast.predictedStatus().getLabel(),
+                    forecast.isRiskPredicted() ? "<- spoilage risk predicted" : "");
         }
     }
 

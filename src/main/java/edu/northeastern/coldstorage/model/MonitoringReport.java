@@ -17,6 +17,7 @@ public final class MonitoringReport {
     private final double percentNonCompliant;
     private final double contractorThresholdPercent;
     private final List<StorageUnit> units;
+    private final List<Forecast> forecasts;
 
     /**
      * Creates a report.
@@ -32,6 +33,26 @@ public final class MonitoringReport {
     public MonitoringReport(int totalReadings, Map<ComplianceStatus, Integer> statusCounts,
                             double meanTemperature, double variance, double percentNonCompliant,
                             double contractorThresholdPercent, List<StorageUnit> units) {
+        this(totalReadings, statusCounts, meanTemperature, variance, percentNonCompliant,
+                contractorThresholdPercent, units, List.of());
+    }
+
+    /**
+     * Creates a report that also includes temperature forecasts.
+     *
+     * @param totalReadings              number of readings processed
+     * @param statusCounts               count of readings per status
+     * @param meanTemperature            mean temperature across all readings
+     * @param variance                   population variance across all readings
+     * @param percentNonCompliant        percent of readings that were NON_COMPLIANT
+     * @param contractorThresholdPercent max percent of unsafe readings the contractor may have
+     * @param units                      per-room state, in display order
+     * @param forecasts                  predicted temperatures, one per room with enough history
+     */
+    public MonitoringReport(int totalReadings, Map<ComplianceStatus, Integer> statusCounts,
+                            double meanTemperature, double variance, double percentNonCompliant,
+                            double contractorThresholdPercent, List<StorageUnit> units,
+                            List<Forecast> forecasts) {
         this.totalReadings = totalReadings;
         this.statusCounts = Collections.unmodifiableMap(new EnumMap<>(statusCounts));
         this.meanTemperature = meanTemperature;
@@ -39,6 +60,7 @@ public final class MonitoringReport {
         this.percentNonCompliant = percentNonCompliant;
         this.contractorThresholdPercent = contractorThresholdPercent;
         this.units = List.copyOf(units);
+        this.forecasts = List.copyOf(forecasts);
     }
 
     public int getTotalReadings() {
@@ -73,5 +95,10 @@ public final class MonitoringReport {
 
     public List<StorageUnit> getUnits() {
         return units;
+    }
+
+    /** Returns the temperature forecasts, one per room with enough history. */
+    public List<Forecast> getForecasts() {
+        return forecasts;
     }
 }

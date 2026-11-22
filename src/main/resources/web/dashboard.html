@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Smart Cold Storage Monitor</title>
+<style>
+  /* Self-contained: no external CSS or JS, so the dashboard works offline. */
+  :root {
+    --bg: #f3f6fb; --card: #ffffff; --ink: #1c2434; --muted: #5d6b82; --line: #dde3ee;
+    --navy: #13294b; --green: #1e8e4e; --yellow: #b7791f; --red: #c53030;
+    --green-bg: #e3f6ea; --yellow-bg: #fdf3dc; --red-bg: #fde5e5;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: var(--bg); color: var(--ink); }
+  header { background: var(--navy); color: #fff; padding: 16px 24px; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; justify-content: space-between; }
+  header h1 { margin: 0; font-size: 22px; }
+  header .meta { font-size: 14px; opacity: .85; }
+  main { max-width: 1200px; margin: 0 auto; padding: 20px 16px 40px; }
+  .row { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 16px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  .stat { flex: 1 1 180px; }
+  .stat .label { font-size: 13px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .stat .value { font-size: 28px; font-weight: 700; margin-top: 4px; }
+  .chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; }
+  .COMPLIANT { background: var(--green-bg); color: var(--green); }
+  .WARNING { background: var(--yellow-bg); color: var(--yellow); }
+  .NON_COMPLIANT { background: var(--red-bg); color: var(--red); }
+  .pass { color: var(--green); } .fail { color: var(--red); }
+  #alarm { display: none; background: var(--red); color: #fff; border-radius: 12px; padding: 14px 18px; font-weight: 700; margin-bottom: 16px; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+  #alarm.on { display: flex; animation: pulse 1s infinite alternate; }
+  @keyframes pulse { from { opacity: 1; } to { opacity: .75; } }
+  .rooms { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 16px; }
+  .room { cursor: pointer; border-width: 2px; }
+  .room.selected { border-color: var(--navy); }
+  .room h3 { margin: 0 0 8px; font-size: 17px; display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+  .room .temp { font-size: 34px; font-weight: 700; }
+  .room dl { display: grid; grid-template-columns: auto auto; gap: 2px 12px; margin: 10px 0 0; font-size: 14px; }
+  .room dt { color: var(--muted); } .room dd { margin: 0; text-align: right; }
+  .forecast { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); font-size: 14px; }
+  canvas { width: 100%; height: 260px; display: block; }
+  h2 { font-size: 18px; margin: 0 0 12px; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); }
+  th { color: var(--muted); font-weight: 600; }
+  button { font: inherit; border: 0; border-radius: 8px; padding: 8px 14px; cursor: pointer; background: var(--navy); color: #fff; }
+  button.light { background: #e7ecf5; color: var(--navy); }
+  button.danger { background: #fff; color: var(--red); }
+  select { font: inherit; padding: 6px 8px; border-radius: 8px; border: 0; }
+  .toolbar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+  #toast { position: fixed; right: 16px; bottom: 16px; background: var(--navy); color: #fff; padding: 10px 14px; border-radius: 8px; display: none; }
+  .muted { color: var(--muted); }
+  .legend { font-size: 13px; color: var(--muted); margin-top: 6px; }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1>Smart Cold Storage Monitor</h1>
+    <div class="meta" id="limits">Loading…</div>
+  </div>
+  <div class="toolbar" style="margin:0">
+    <label for="model" class="meta">Prediction model</label>
+    <select id="model">
+      <option value="moving-average">Moving average</option>
+      <option value="linear">Linear regression</option>
+    </select>
+    <button class="light" id="sound">Enable sound</button>
+  </div>
+</header>
+<main>
+  <div id="alarm">
+    <span>⚠ ALARM: unacknowledged NON-COMPLIANT readings</span>
+    <span class="toolbar" style="margin:0">
+      <button class="danger" id="silence">Silence alarm</button>
+      <button class="danger" id="ackAllTop">Acknowledge all</button>
+    </span>
+  </div>
+
+  <div class="row">
+    <div class="card stat"><div class="label">Readings processed</div><div class="value" id="readings">0</div></div>
+    <div class="card stat"><div class="label">Mean temperature</div><div class="value" id="mean">–</div></div>
+    <div class="card stat"><div class="label">Active alerts</div><div class="value" id="active">0</div></div>
+    <div class="card stat"><div class="label">Contractor (TMC)</div><div class="value" id="contractor">–</div><div class="muted" id="contractorDetail"></div></div>
+  </div>
+
+  <div class="rooms" id="rooms"><div class="card muted">Waiting for sensor readings…</div></div>
+
+  <div class="card" style="margin-bottom:16px">
+    <h2 id="chartTitle">Temperature trend</h2>
+    <canvas id="chart" width="1100" height="260"></canvas>
+    <div class="legend">Green band = safe range. Dashed lines = warning limits. Dotted point = forecast.</div>
+  </div>
+
+  <div class="card">
+    <div class="toolbar">
+      <h2 style="margin:0;flex:1">Active alerts</h2>
+      <button id="ackAll">Acknowledge all</button>
+    </div>
+    <table>
+      <thead><tr><th>ID</th><th>Room</th><th>Time</th><th>Temp (°C)</th><th>Status</th><th></th></tr></thead>
+      <tbody id="alerts"><tr><td colspan="6" class="muted">No active alerts</td></tr></tbody>
+    </table>
+  </div>
+</main>
+<div id="toast"></div>
+
+<script>
+const REFRESH_MS = 1000;       // the dashboard refreshes once per second
+let selectedRoom = null;
+let soundOn = false;
+let audioCtx = null;
+let lastBeep = 0;
+let lastStatus = null;
+
+const fmt = (v, d = 2) => (v === null || v === undefined) ? "–" : Number(v).toFixed(d);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+
+async function post(url) {
+  const res = await fetch(url, {method: "POST"});
+  const body = await res.json();
+  toast(body.message);
+  refresh();
+}
+
+function toast(text) {
+  const el = document.getElementById("toast");
+  el.textContent = text;
+  el.style.display = "block";
+  clearTimeout(el.timer);
+  el.timer = setTimeout(() => el.style.display = "none", 2500);
+}
+
+function beep() {
+  // Browsers only allow sound after the user clicks something, hence the "Enable sound" button.
+  if (!soundOn || Date.now() - lastBeep < 2000) return;
+  lastBeep = Date.now();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.frequency.value = 880;
+  gain.gain.value = 0.1;
+  osc.connect(gain); gain.connect(audioCtx.destination);
+  osc.start(); osc.stop(audioCtx.currentTime + 0.25);
+}
+
+function renderStatus(s) {
+  lastStatus = s;
+  const L = s.limits;
+  document.getElementById("limits").textContent =
+    `Safe ${fmt(L.minSafe, 1)}–${fmt(L.maxSafe, 1)} °C · Warning within ±${fmt(L.warningMargin, 1)} °C · Model: ${s.predictor}`;
+  document.getElementById("model").value = s.predictor === "Linear regression" ? "linear" : "moving-average";
+  document.getElementById("readings").textContent = s.readings;
+  document.getElementById("active").textContent = s.activeAlerts;
+  document.getElementById("mean").textContent = s.readings ? fmt(s.meanTemperature) + " °C" : "–";
+  const alarm = document.getElementById("alarm");
+  alarm.classList.toggle("on", s.alarmActive);
+  if (s.alarmActive) beep();
+
+  if (s.readings) {
+    const c = document.getElementById("contractor");
+    c.textContent = s.contractorCompliant ? "PASS" : "FAIL";
+    c.className = "value " + (s.contractorCompliant ? "pass" : "fail");
+    document.getElementById("contractorDetail").textContent =
+      `${fmt(s.percentNonCompliant, 1)}% non-compliant (limit ${fmt(s.contractorThreshold, 0)}%)`;
+  }
+  if (!s.rooms.length) return;
+  if (!selectedRoom || !s.rooms.some(r => r.roomId === selectedRoom)) selectedRoom = s.rooms[0].roomId;
+
+  document.getElementById("rooms").innerHTML = s.rooms.map(r => `
+    <div class="card room ${r.roomId === selectedRoom ? "selected" : ""}" data-room="${esc(r.roomId)}">
+      <h3>${esc(r.roomId)} <span class="chip ${r.status}">${r.statusLabel}</span></h3>
+      <div class="temp">${fmt(r.current)} °C</div>
+      <dl>
+        <dt>Mean / std dev</dt><dd>${fmt(r.mean)} / ${fmt(r.stdDev)}</dd>
+        <dt>Min / max</dt><dd>${fmt(r.min)} / ${fmt(r.max)}</dd>
+        <dt>Green / yellow / red</dt><dd>${r.green} / ${r.yellow} / ${r.red}</dd>
+        <dt>Readings</dt><dd>${r.readings}</dd>
+      </dl>
+      <div class="forecast">${r.forecast
+        ? `Forecast (${r.forecast.stepsAhead} readings ahead): <b>${fmt(r.forecast.temperature)} °C</b>
+           <span class="chip ${r.forecast.status}">${r.forecast.risk ? "⚠ " : ""}${r.forecast.statusLabel}</span>`
+        : `<span class="muted">Forecast: not enough history yet</span>`}</div>
+    </div>`).join("");
+  document.querySelectorAll(".room").forEach(el =>
+    el.addEventListener("click", () => { selectedRoom = el.dataset.room; renderStatus(lastStatus); }));
+  drawChart(s.rooms.find(r => r.roomId === selectedRoom), L);
+}
+
+function drawChart(room, L) {
+  const canvas = document.getElementById("chart");
+  const ctx = canvas.getContext("2d");
+  const W = canvas.width, H = canvas.height, pad = 40;
+  ctx.clearRect(0, 0, W, H);
+  if (!room || !room.history.length) return;
+  document.getElementById("chartTitle").textContent = `Temperature trend: ${room.roomId} (last ${room.history.length} readings)`;
+  const points = room.history.slice();
+  const forecast = room.forecast ? room.forecast.temperature : null;
+  const values = points.concat(forecast === null ? [] : [forecast], [L.minSafe - L.warningMargin, L.maxSafe + L.warningMargin]);
+  const lo = Math.floor(Math.min(...values) - 0.5), hi = Math.ceil(Math.max(...values) + 0.5);
+  const n = points.length + (forecast === null ? 0 : 1);
+  const x = i => pad + (W - 2 * pad) * (n === 1 ? 0.5 : i / (n - 1));
+  const y = v => H - pad + (H - 2 * pad) * (lo - v) / (hi - lo);
+
+  ctx.fillStyle = "#e3f6ea";                                   // safe band
+  ctx.fillRect(pad, y(L.maxSafe), W - 2 * pad, y(L.minSafe) - y(L.maxSafe));
+  ctx.strokeStyle = "#b7791f"; ctx.setLineDash([6, 6]); ctx.lineWidth = 1;
+  [L.minSafe - L.warningMargin, L.maxSafe + L.warningMargin].forEach(v => {
+    ctx.beginPath(); ctx.moveTo(pad, y(v)); ctx.lineTo(W - pad, y(v)); ctx.stroke();
+  });
+  ctx.setLineDash([]);
+  ctx.fillStyle = "#5d6b82"; ctx.font = "12px sans-serif";
+  for (let v = lo; v <= hi; v++) ctx.fillText(v + "°", 6, y(v) + 4);
+
+  ctx.strokeStyle = "#13294b"; ctx.lineWidth = 2; ctx.beginPath();
+  points.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
+  ctx.stroke();
+  points.forEach((v, i) => {
+    ctx.fillStyle = v < L.minSafe - L.warningMargin || v > L.maxSafe + L.warningMargin ? "#c53030"
+      : (v < L.minSafe || v > L.maxSafe ? "#b7791f" : "#1e8e4e");
+    ctx.beginPath(); ctx.arc(x(i), y(v), 3, 0, 2 * Math.PI); ctx.fill();
+  });
+  if (forecast !== null) {
+    const i = points.length;
+    ctx.setLineDash([3, 4]); ctx.strokeStyle = "#5d6b82";
+    ctx.beginPath(); ctx.moveTo(x(i - 1), y(points[i - 1])); ctx.lineTo(x(i), y(forecast)); ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = room.forecast.risk ? "#c53030" : "#1e8e4e";
+    ctx.beginPath(); ctx.arc(x(i), y(forecast), 5, 0, 2 * Math.PI); ctx.fill();
+    ctx.fillStyle = "#1c2434"; ctx.fillText("forecast", x(i) - 52, y(forecast) - 8);
+  }
+}
+
+function renderAlerts(a) {
+  const body = document.getElementById("alerts");
+  if (!a.active.length) {
+    body.innerHTML = `<tr><td colspan="6" class="muted">No active alerts</td></tr>`;
+    return;
+  }
+  body.innerHTML = a.active.slice(-25).reverse().map(al => `
+    <tr><td>#${al.id}</td><td>${esc(al.roomId)}</td><td>${esc(al.time.replace("T", " "))}</td>
+    <td>${fmt(al.temperature)}</td><td><span class="chip ${al.status}">${al.statusLabel}</span></td>
+    <td><button class="light" data-ack="${al.id}">Acknowledge</button></td></tr>`).join("");
+  body.querySelectorAll("[data-ack]").forEach(b =>
+    b.addEventListener("click", () => post(`/api/alerts/${b.dataset.ack}/acknowledge`)));
+}
+
+async function refresh() {
+  try {
+    const [s, a] = await Promise.all([fetch("/api/status").then(r => r.json()), fetch("/api/alerts").then(r => r.json())]);
+    renderStatus(s);
+    renderAlerts(a);
+  } catch (e) {
+    document.getElementById("limits").textContent = "Connection lost: is the Java program still running?";
+  }
+}
+
+document.getElementById("ackAll").onclick = () => post("/api/alerts/acknowledge-all");
+document.getElementById("ackAllTop").onclick = () => post("/api/alerts/acknowledge-all");
+document.getElementById("silence").onclick = () => post("/api/alarm/silence");
+document.getElementById("model").onchange = e => post("/api/predictor?model=" + e.target.value);
+document.getElementById("sound").onclick = e => {
+  soundOn = !soundOn;
+  if (soundOn && !audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  e.target.textContent = soundOn ? "Sound on" : "Enable sound";
+};
+refresh();
+setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

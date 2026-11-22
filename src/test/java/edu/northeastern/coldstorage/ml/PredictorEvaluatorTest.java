@@ -1,83 +1,65 @@
 package edu.northeastern.coldstorage.ml;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import edu.northeastern.coldstorage.data.ColdStorageDataReader;
+import edu.northeastern.coldstorage.model.SensorReading;
+import java.io.IOException;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 class PredictorEvaluatorTest {
 
-    private static final double EPS = 1e-9;
-
     @Test
-    void perfectModelHasZeroError() {
-        PredictorEvaluator evaluator = new PredictorEvaluator(3);
-        List<Double> line = List.of(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
-        assertEquals(0.0, evaluator.meanAbsoluteError(new LinearRegressionPredictor(), line), EPS);
+    void perfectLineGivesZeroErrorForLinearRegression() {
+        List<Double> line = new ArrayList<>();
+        for (int i = 0; i < 30; i++) {
+            line.add(2.0 + 0.1 * i);
+        }
+        assertEquals(0.0, PredictorEvaluator.meanAbsoluteError(new LinearRegressionPredictor(), line, 3), 1e-9);
     }
 
     @Test
-    void errorMatchesHandCalculation() {
-        // window 2 moving average: predicts 1.5 for 3.0 (error 1.5), 2.5 for 4.0 (error 1.5)
-        PredictorEvaluator evaluator = new PredictorEvaluator(2);
-        List<Double> temps = List.of(1.0, 2.0, 3.0, 4.0);
-        assertEquals(1.5, evaluator.meanAbsoluteError(new MovingAveragePredictor(2), temps), EPS);
+    void movingAverageErrorOnAKnownSeries() {
+        // Window 1 just predicts "same as last reading". Series 1,2,3,4 with 1 step ahead:
+        // predictions 1,2,3 vs actual 2,3,4 -> every error is 1.
+        double mae = PredictorEvaluator.meanAbsoluteError(new MovingAveragePredictor(1),
+                List.of(1.0, 2.0, 3.0, 4.0), 1);
+        assertEquals(1.0, mae, 1e-9);
     }
 
     @Test
-    void tooFewReadingsGiveNaN() {
-        PredictorEvaluator evaluator = new PredictorEvaluator(2);
-        assertTrue(Double.isNaN(evaluator.meanAbsoluteError(new LinearRegressionPredictor(), List.of(1.0, 2.0))));
+    void roomsAreEvaluatedSeparatelyThenAveraged() {
+        List<SensorReading> readings = new ArrayList<>();
+        // Room A rises by 1 (error 1 each), room B is flat (error 0) -> average 0.5
+        for (int i = 0; i < 4; i++) {
+            readings.add(reading("A", i, 1.0 + i));
+            readings.add(reading("B", i, 3.0));
+        }
+        double mae = PredictorEvaluator.meanAbsoluteErrorByRoom(new MovingAveragePredictor(1), readings, 1);
+        assertEquals(0.5, mae, 1e-9);
     }
 
     @Test
-    void averageErrorSkipsSeriesThatAreTooShort() {
-        PredictorEvaluator evaluator = new PredictorEvaluator(2);
-        List<List<Double>> series = List.of(List.of(1.0, 2.0, 3.0, 4.0), List.of(5.0));
-        assertEquals(1.5, evaluator.averageError(new MovingAveragePredictor(2), series), EPS);
+    void bothModelsGiveSensibleErrorsOnTheRealDataset() throws IOException {
+        List<SensorReading> readings = new ColdStorageDataReader().readFromResource("IoT.csv");
+        double linear = PredictorEvaluator.meanAbsoluteErrorByRoom(new LinearRegressionPredictor(), readings, 3);
+        double average = PredictorEvaluator.meanAbsoluteErrorByRoom(new MovingAveragePredictor(), readings, 3);
+        assertTrue(linear > 0 && linear < 5, "linear MAE " + linear);
+        assertTrue(average > 0 && average < 5, "moving average MAE " + average);
     }
 
     @Test
-    void compareScoresEveryModelInOrder() {
-        PredictorEvaluator evaluator = new PredictorEvaluator(3);
-        TemperaturePredictor regression = new LinearRegressionPredictor();
-        TemperaturePredictor average = new MovingAveragePredictor(3);
-        Map<TemperaturePredictor, Double> scores =
-                evaluator.compare(List.of(regression, average), List.of(List.of(1.0, 2.0, 3.0, 4.0, 5.0)));
-
-        assertEquals(List.of(regression, average), List.copyOf(scores.keySet()));
-        assertEquals(0.0, scores.get(regression), EPS);
-        // moving average of 3 lags a rising line by 2.0 every time
-        assertEquals(2.0, scores.get(average), EPS);
-    }
-
-    @Test
-    void findBestPicksTrendModelForTrendingData() {
-        PredictorEvaluator evaluator = new PredictorEvaluator(3);
-        TemperaturePredictor regression = new LinearRegressionPredictor();
-        List<List<Double>> rising = List.of(List.of(1.0, 2.0, 3.0, 4.0, 5.0, 6.0));
-        assertSame(regression, evaluator.findBest(List.of(new MovingAveragePredictor(3), regression), rising));
-    }
-
-    @Test
-    void findBestPicksAverageForSpikyData() {
-        PredictorEvaluator evaluator = new PredictorEvaluator(4);
-        TemperaturePredictor average = new MovingAveragePredictor(4);
-        List<List<Double>> spiky = List.of(List.of(3.0, 3.0, 3.0, 9.0, 3.0, 3.0, 3.0, 3.0));
-        assertSame(average, evaluator.findBest(List.of(new LinearRegressionPredictor(), average), spiky));
-    }
-
-    @Test
-    void invalidArgumentsAreRejected() {
-        assertThrows(IllegalArgumentException.class, () -> new PredictorEvaluator(0));
-        PredictorEvaluator evaluator = new PredictorEvaluator(2);
+    void tooShortSeriesIsRejected() {
         assertThrows(IllegalArgumentException.class,
-                () -> evaluator.findBest(List.of(), List.of(List.of(1.0, 2.0, 3.0))));
-        assertThrows(IllegalArgumentException.class,
-                () -> evaluator.findBest(List.of(new LinearRegressionPredictor()), List.of(List.of(1.0))));
+                () -> PredictorEvaluator.meanAbsoluteError(new LinearRegressionPredictor(), List.of(1.0, 2.0), 3));
+    }
+
+    private static SensorReading reading(String room, int i, double temp) {
+        return new SensorReading(i, room, LocalDateTime.of(2024, 1, 1, 0, 0).plusHours(i), temp, 80.0);
     }
 }

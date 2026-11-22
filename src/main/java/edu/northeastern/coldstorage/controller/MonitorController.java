@@ -1,9 +1,12 @@
 package edu.northeastern.coldstorage.controller;
 
 import edu.northeastern.coldstorage.ml.ComplianceChecker;
+import edu.northeastern.coldstorage.ml.Predictor;
 import edu.northeastern.coldstorage.ml.StatisticsCalculator;
+import edu.northeastern.coldstorage.ml.TemperatureForecaster;
 import edu.northeastern.coldstorage.model.Alert;
 import edu.northeastern.coldstorage.model.ComplianceStatus;
+import edu.northeastern.coldstorage.model.Forecast;
 import edu.northeastern.coldstorage.model.MonitoringReport;
 import edu.northeastern.coldstorage.model.SensorReading;
 import edu.northeastern.coldstorage.model.StorageUnit;
@@ -28,6 +31,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 public class MonitorController {
 
     private final ComplianceChecker checker;
+    private final TemperatureForecaster forecaster;
     /** Copy-on-write so listeners can be added from any thread while alerts are being sent. */
     private final List<AlertListener> listeners = new CopyOnWriteArrayList<>();
     private final Map<String, StorageUnit> units = new TreeMap<>();
@@ -40,7 +44,18 @@ public class MonitorController {
      * @param checker the compliance rules to apply
      */
     public MonitorController(ComplianceChecker checker) {
+        this(checker, new TemperatureForecaster(checker));
+    }
+
+    /**
+     * Creates a controller with a specific forecaster.
+     *
+     * @param checker    the compliance rules to apply
+     * @param forecaster predicts each room's upcoming temperature
+     */
+    public MonitorController(ComplianceChecker checker, TemperatureForecaster forecaster) {
         this.checker = Objects.requireNonNull(checker, "checker must not be null");
+        this.forecaster = Objects.requireNonNull(forecaster, "forecaster must not be null");
         for (ComplianceStatus s : ComplianceStatus.values()) {
             statusCounts.put(s, 0);
         }
@@ -120,7 +135,30 @@ public class MonitorController {
                 StatisticsCalculator.variance(temperatures),
                 percentNonCompliant,
                 ComplianceChecker.DEFAULT_CONTRACTOR_THRESHOLD_PERCENT,
-                copyUnits());
+                copyUnits(),
+                forecastAll());
+    }
+
+    /** Returns a forecast for every room that has enough history, in room order. */
+    public synchronized List<Forecast> forecastAll() {
+        List<Forecast> forecasts = new ArrayList<>();
+        for (StorageUnit unit : units.values()) {
+            forecaster.forecast(unit).ifPresent(forecasts::add);
+        }
+        return forecasts;
+    }
+
+    /** Switches the temperature prediction model (Strategy pattern). */
+    public void setPredictor(Predictor predictor) {
+        forecaster.setPredictor(predictor);
+    }
+
+    public Predictor getPredictor() {
+        return forecaster.getPredictor();
+    }
+
+    public TemperatureForecaster getForecaster() {
+        return forecaster;
     }
 
     /**
