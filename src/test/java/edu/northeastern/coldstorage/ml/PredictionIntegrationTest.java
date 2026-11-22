@@ -60,8 +60,8 @@ class PredictionIntegrationTest {
         for (Map.Entry<String, List<Double>> room : temperaturesByRoom.entrySet()) {
             for (TemperaturePredictor model
                     : List.of(new LinearRegressionPredictor(), new MovingAveragePredictor())) {
-                double mae = PredictionService.meanAbsoluteError(
-                        model, room.getValue(), PredictionService.DEFAULT_HISTORY_SIZE);
+                double mae = new PredictorEvaluator(PredictionService.DEFAULT_HISTORY_SIZE)
+                        .meanAbsoluteError(model, room.getValue());
                 // Readings range from about -4 to 19 C; a useful model should be off by
                 // only a few degrees on average.
                 assertTrue(mae >= 0 && mae < 3.0,

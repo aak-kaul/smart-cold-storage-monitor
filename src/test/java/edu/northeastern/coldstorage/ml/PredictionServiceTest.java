@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.northeastern.coldstorage.model.ComplianceStatus;
+import edu.northeastern.coldstorage.model.Forecast;
 import edu.northeastern.coldstorage.model.SensorReading;
 import edu.northeastern.coldstorage.model.StorageUnit;
 import java.time.LocalDateTime;
@@ -97,9 +98,13 @@ class PredictionServiceTest {
         for (double t : new double[] {2.0, 2.5, 3.0, 3.5}) {
             unit.record(reading(ROOM_A, t), ComplianceStatus.COMPLIANT);
         }
-        assertEquals(4.0, service.forecast(unit, 1).getAsDouble(), EPS);
-        assertEquals(ComplianceStatus.COMPLIANT, service.forecastStatus(unit, 1).get());
-        assertEquals(ComplianceStatus.WARNING, service.forecastStatus(unit, 2).get());
+        Forecast next = service.forecast(unit, 1).get();
+        assertEquals(ROOM_A, next.getRoomId());
+        assertEquals("Linear regression", next.getModelName());
+        assertEquals(1, next.getStepsAhead());
+        assertEquals(4.0, next.getPredictedTemperature(), EPS);
+        assertEquals(ComplianceStatus.COMPLIANT, next.getPredictedStatus());
+        assertEquals(ComplianceStatus.WARNING, service.forecast(unit, 2).get().getPredictedStatus());
     }
 
     @Test
@@ -109,33 +114,13 @@ class PredictionServiceTest {
         for (double t : new double[] {50.0, 50.0, 3.0, 3.0, 3.0, 3.0}) {
             unit.record(reading(ROOM_A, t), ComplianceStatus.COMPLIANT);
         }
-        assertEquals(3.0, service.forecast(unit, 1).getAsDouble(), EPS);
+        assertEquals(3.0, service.forecast(unit, 1).get().getPredictedTemperature(), EPS);
     }
 
     @Test
     void emptyStorageUnitHasNoForecast() {
         StorageUnit unit = new StorageUnit(ROOM_A);
         assertTrue(service.forecast(unit, 1).isEmpty());
-        assertTrue(service.forecastStatus(unit, 1).isEmpty());
-    }
-
-    @Test
-    void meanAbsoluteErrorOfPerfectModelIsZero() {
-        List<Double> line = List.of(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
-        assertEquals(0.0, PredictionService.meanAbsoluteError(new LinearRegressionPredictor(), line, 3), EPS);
-    }
-
-    @Test
-    void meanAbsoluteErrorMatchesHandCalculation() {
-        // window 2 moving average: predicts 1.5 for 3.0 (error 1.5), 2.5 for 4.0 (error 1.5)
-        List<Double> temps = List.of(1.0, 2.0, 3.0, 4.0);
-        assertEquals(1.5, PredictionService.meanAbsoluteError(new MovingAveragePredictor(2), temps, 2), EPS);
-    }
-
-    @Test
-    void meanAbsoluteErrorIsNaNWithTooFewReadings() {
-        double mae = PredictionService.meanAbsoluteError(new LinearRegressionPredictor(), List.of(1.0, 2.0), 2);
-        assertTrue(Double.isNaN(mae));
     }
 
     @Test

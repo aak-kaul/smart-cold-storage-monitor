@@ -1,6 +1,7 @@
 package edu.northeastern.coldstorage.ml;
 
 import edu.northeastern.coldstorage.model.ComplianceStatus;
+import edu.northeastern.coldstorage.model.Forecast;
 import edu.northeastern.coldstorage.model.SensorReading;
 import edu.northeastern.coldstorage.model.StorageUnit;
 import java.util.ArrayDeque;
@@ -112,30 +113,22 @@ public class PredictionService {
      * as the GUI and web dashboard show a forecast for any unit in a {@code MonitoringReport}
      * without feeding readings into this service first.
      *
-     * @return the prediction, or empty if the unit has no readings yet
+     * <p>The forecast also carries the compliance status of the predicted temperature, so a
+     * room heading out of the safe range can be flagged before it gets there.
+     *
+     * @return the forecast, or empty if the unit has no readings yet
      * @throws IllegalArgumentException if stepsAhead is less than 1
      */
-    public synchronized OptionalDouble forecast(StorageUnit unit, int stepsAhead) {
+    public synchronized Optional<Forecast> forecast(StorageUnit unit, int stepsAhead) {
         Objects.requireNonNull(unit, "unit must not be null");
         List<Double> recent = unit.getRecentTemperatures();
         if (recent.isEmpty()) {
-            return OptionalDouble.empty();
+            return Optional.empty();
         }
         List<Double> window = recent.subList(Math.max(0, recent.size() - historySize), recent.size());
-        return OptionalDouble.of(predictor.predict(window, stepsAhead));
-    }
-
-    /**
-     * Classifies a unit's forecast temperature, so a room heading out of the safe range
-     * can be flagged before it gets there.
-     *
-     * @return the predicted status, or empty if the unit has no readings yet
-     */
-    public synchronized Optional<ComplianceStatus> forecastStatus(StorageUnit unit, int stepsAhead) {
-        OptionalDouble predicted = forecast(unit, stepsAhead);
-        return predicted.isPresent()
-                ? Optional.of(checker.classify(predicted.getAsDouble()))
-                : Optional.empty();
+        double predicted = predictor.predict(window, stepsAhead);
+        return Optional.of(new Forecast(unit.getRoomId(), predictor.getName(), stepsAhead,
+                predicted, checker.classify(predicted)));
     }
 
     /** Returns the rooms that have at least one reading, in no particular order. */
@@ -151,34 +144,5 @@ public class PredictionService {
 
     public int getHistorySize() {
         return historySize;
-    }
-
-    /**
-     * Measures how accurate a strategy is on a series of past temperatures (backtesting).
-     *
-     * <p>For every reading after the first {@code historySize}, the strategy predicts it
-     * from the {@code historySize} readings before it, and the absolute error is recorded.
-     * The result is the mean absolute error in degrees Celsius; lower is better.
-     *
-     * @param model        the strategy to evaluate
-     * @param temperatures past temperatures in time order
-     * @param historySize  how many previous readings each prediction may use; at least 1
-     * @return the mean absolute error, or NaN if there are not enough temperatures
-     */
-    public static double meanAbsoluteError(TemperaturePredictor model, List<Double> temperatures,
-                                           int historySize) {
-        Objects.requireNonNull(model, "model must not be null");
-        Objects.requireNonNull(temperatures, "temperatures must not be null");
-        if (historySize < 1) {
-            throw new IllegalArgumentException("historySize must be at least 1");
-        }
-        double totalError = 0;
-        int predictions = 0;
-        for (int i = historySize; i < temperatures.size(); i++) {
-            double predicted = model.predict(temperatures.subList(i - historySize, i), 1);
-            totalError += Math.abs(predicted - temperatures.get(i));
-            predictions++;
-        }
-        return predictions == 0 ? Double.NaN : totalError / predictions;
     }
 }

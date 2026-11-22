@@ -7,8 +7,8 @@ import edu.northeastern.coldstorage.ml.ComplianceChecker;
 import edu.northeastern.coldstorage.ml.LinearRegressionPredictor;
 import edu.northeastern.coldstorage.ml.MovingAveragePredictor;
 import edu.northeastern.coldstorage.ml.PredictionService;
+import edu.northeastern.coldstorage.ml.PredictorEvaluator;
 import edu.northeastern.coldstorage.ml.TemperaturePredictor;
-import edu.northeastern.coldstorage.model.ComplianceStatus;
 import edu.northeastern.coldstorage.model.MonitoringReport;
 import edu.northeastern.coldstorage.model.SensorReading;
 import edu.northeastern.coldstorage.model.StorageUnit;
@@ -103,9 +103,8 @@ public final class Main {
             System.out.printf("  %-16s", unit.getRoomId());
             for (TemperaturePredictor model : models) {
                 forecaster.setPredictor(model);
-                double next = forecaster.forecast(unit, 1).orElse(Double.NaN);
-                ComplianceStatus status = forecaster.forecastStatus(unit, 1).orElse(null);
-                System.out.printf("  %s: %6.2f C %-15s", model.getName(), next, "(" + status + ")");
+                forecaster.forecast(unit, 1).ifPresent(f -> System.out.printf("  %s: %6.2f C %-15s",
+                        f.getModelName(), f.getPredictedTemperature(), "(" + f.getPredictedStatus() + ")"));
             }
             System.out.println();
         }
@@ -114,14 +113,13 @@ public final class Main {
         for (SensorReading r : readings) {
             temperaturesByRoom.computeIfAbsent(r.getRoomId(), id -> new ArrayList<>()).add(r.getTemperature());
         }
+        PredictorEvaluator evaluator = new PredictorEvaluator(PredictionService.DEFAULT_HISTORY_SIZE);
         System.out.println("Model accuracy on this data (mean absolute error, lower is better):");
-        for (TemperaturePredictor model : models) {
-            double totalError = 0;
-            for (List<Double> temps : temperaturesByRoom.values()) {
-                totalError += PredictionService.meanAbsoluteError(
-                        model, temps, PredictionService.DEFAULT_HISTORY_SIZE);
-            }
-            System.out.printf("  %-20s %.2f C%n", model.getName(), totalError / temperaturesByRoom.size());
+        for (Map.Entry<TemperaturePredictor, Double> score
+                : evaluator.compare(models, temperaturesByRoom.values()).entrySet()) {
+            System.out.printf("  %-20s %.2f C%n", score.getKey().getName(), score.getValue());
         }
+        System.out.println("Most accurate model: "
+                + evaluator.findBest(models, temperaturesByRoom.values()).getName());
     }
 }
