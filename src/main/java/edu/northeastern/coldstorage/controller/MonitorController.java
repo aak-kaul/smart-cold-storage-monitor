@@ -40,12 +40,12 @@ public class MonitorController {
     }
 
     /** Registers a listener to be notified of alerts. */
-    public void addListener(AlertListener listener) {
+    public synchronized void addListener(AlertListener listener) {
         listeners.add(Objects.requireNonNull(listener, "listener must not be null"));
     }
 
     /** Stops notifying a listener. */
-    public void removeListener(AlertListener listener) {
+    public synchronized void removeListener(AlertListener listener) {
         listeners.remove(listener);
     }
 
@@ -55,7 +55,7 @@ public class MonitorController {
      * @param reading the incoming reading
      * @return the reading's compliance status
      */
-    public ComplianceStatus process(SensorReading reading) {
+    public synchronized ComplianceStatus process(SensorReading reading) {
         Objects.requireNonNull(reading, "reading must not be null");
         ComplianceStatus status = checker.classify(reading);
 
@@ -75,7 +75,7 @@ public class MonitorController {
      * @param readings the readings to process
      * @return a report covering every reading processed so far
      */
-    public MonitoringReport processAll(List<SensorReading> readings) {
+    public  MonitoringReport processAll(List<SensorReading> readings) {
         Objects.requireNonNull(readings, "readings must not be null");
         for (SensorReading reading : readings) {
             process(reading);
@@ -88,7 +88,7 @@ public class MonitorController {
      *
      * @throws IllegalStateException if no readings have been processed
      */
-    public MonitoringReport buildReport() {
+    public synchronized MonitoringReport buildReport() {
         if (temperatures.isEmpty()) {
             throw new IllegalStateException("No readings have been processed");
         }
@@ -105,7 +105,7 @@ public class MonitorController {
     }
 
     /** Returns the storage unit for a room, or null if no readings were seen for it. */
-    public StorageUnit getUnit(String roomId) {
+    public synchronized StorageUnit getUnit(String roomId) {
         return units.get(roomId);
     }
 
