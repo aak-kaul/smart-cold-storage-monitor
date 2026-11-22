@@ -1,6 +1,10 @@
 package edu.northeastern.coldstorage.model;
 
+import java.util.ArrayDeque;
+import java.util.ArrayList;
+import java.util.Deque;
 import java.util.EnumMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 
@@ -8,9 +12,13 @@ import java.util.Objects;
  * One cold storage room. Stores its latest state and running statistics.
  *
  * <p>The mean and variance are updated incrementally with Welford's algorithm,
- * so the unit never has to keep every reading in memory.
+ * so the unit never has to keep every reading in memory. Only the most recent
+ * {@value #HISTORY_SIZE} temperatures are kept, for charts and temperature prediction.
  */
 public final class StorageUnit {
+
+    /** How many recent temperatures each room remembers (for charts and forecasting). */
+    public static final int HISTORY_SIZE = 48;
 
     private final String roomId;
     private double currentTemperature;
@@ -21,6 +29,7 @@ public final class StorageUnit {
     private double minTemperature = Double.POSITIVE_INFINITY;
     private double maxTemperature = Double.NEGATIVE_INFINITY;
     private final Map<ComplianceStatus, Integer> statusCounts = new EnumMap<>(ComplianceStatus.class);
+    private final Deque<Double> recentTemperatures = new ArrayDeque<>();
 
     /**
      * Creates an empty storage unit.
@@ -58,6 +67,33 @@ public final class StorageUnit {
         currentTemperature = t;
         currentStatus = status;
         statusCounts.merge(status, 1, Integer::sum);
+        recentTemperatures.addLast(t);
+        if (recentTemperatures.size() > HISTORY_SIZE) {
+            recentTemperatures.removeFirst();
+        }
+    }
+
+    /**
+     * Returns an independent copy of this unit. The controller hands copies to the
+     * views so a GUI or web thread never reads a unit while a sensor thread updates it.
+     */
+    public synchronized StorageUnit copy() {
+        StorageUnit copy = new StorageUnit(roomId);
+        copy.currentTemperature = currentTemperature;
+        copy.currentStatus = currentStatus;
+        copy.readingCount = readingCount;
+        copy.mean = mean;
+        copy.sumSquaredDiffs = sumSquaredDiffs;
+        copy.minTemperature = minTemperature;
+        copy.maxTemperature = maxTemperature;
+        copy.statusCounts.putAll(statusCounts);
+        copy.recentTemperatures.addAll(recentTemperatures);
+        return copy;
+    }
+
+    /** Returns the most recent temperatures, oldest first (at most {@value #HISTORY_SIZE}). */
+    public synchronized List<Double> getRecentTemperatures() {
+        return new ArrayList<>(recentTemperatures);
     }
 
     public String getRoomId() {

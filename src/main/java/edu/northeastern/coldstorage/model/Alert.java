@@ -1,18 +1,25 @@
 package edu.northeastern.coldstorage.model;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * An alert raised when a reading is not compliant.
  *
- * <p>Alerts start unacknowledged; an operator can acknowledge them later
- * (this will be driven by Command objects in a future phase).
+ * <p>Every alert gets a unique id so an operator can acknowledge a specific one.
+ * Alerts start unacknowledged; acknowledging is done through operator commands
+ * (see {@code edu.northeastern.coldstorage.command}).
  */
 public final class Alert {
 
+    /** Shared counter so ids stay unique even when several sensor threads raise alerts at once. */
+    private static final AtomicLong NEXT_ID = new AtomicLong(1);
+
+    private final long id;
     private final SensorReading reading;
     private final ComplianceStatus status;
-    private boolean acknowledged;
+    /** Volatile because the GUI/web threads acknowledge alerts that sensor threads created. */
+    private volatile boolean acknowledged;
 
     /**
      * Creates an alert for a reading.
@@ -27,7 +34,13 @@ public final class Alert {
         if (status == ComplianceStatus.COMPLIANT) {
             throw new IllegalArgumentException("A compliant reading does not raise an alert");
         }
+        this.id = NEXT_ID.getAndIncrement();
         this.acknowledged = false;
+    }
+
+    /** Returns this alert's unique id. */
+    public long getId() {
+        return id;
     }
 
     public SensorReading getReading() {

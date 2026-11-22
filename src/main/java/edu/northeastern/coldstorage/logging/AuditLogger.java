@@ -26,6 +26,8 @@ public final class AuditLogger implements AlertListener {
     public static final String TEMPERATURE_VIOLATION = "TEMPERATURE_VIOLATION";
     /** Event type for system lifecycle events (start, stop, data loaded). */
     public static final String SYSTEM = "SYSTEM";
+    /** Event type for an action taken by an operator (acknowledge, silence, settings change). */
+    public static final String OPERATOR_ACTION = "OPERATOR_ACTION";
 
     private static AuditLogger instance;
 
