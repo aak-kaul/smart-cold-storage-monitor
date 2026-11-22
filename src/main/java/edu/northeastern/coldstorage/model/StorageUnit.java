@@ -41,7 +41,7 @@ public final class StorageUnit {
      * @param status  the status the reading was classified as
      * @throws IllegalArgumentException if the reading belongs to a different room
      */
-    public void record(SensorReading reading, ComplianceStatus status) {
+    public synchronized void record(SensorReading reading, ComplianceStatus status) {
         Objects.requireNonNull(reading, "reading must not be null");
         Objects.requireNonNull(status, "status must not be null");
         if (!reading.getRoomId().equals(roomId)) {
@@ -64,27 +64,27 @@ public final class StorageUnit {
         return roomId;
     }
 
-    public int getReadingCount() {
+    public synchronized int getReadingCount() {
         return readingCount;
     }
 
     /** Returns the most recent temperature, or NaN if no readings yet. */
-    public double getCurrentTemperature() {
+    public synchronized double getCurrentTemperature() {
         return readingCount == 0 ? Double.NaN : currentTemperature;
     }
 
     /** Returns the most recent status, or null if no readings yet. */
-    public ComplianceStatus getCurrentStatus() {
+    public synchronized ComplianceStatus getCurrentStatus() {
         return currentStatus;
     }
 
     /** Returns the running mean temperature, or NaN if no readings yet. */
-    public double getMean() {
+    public synchronized double getMean() {
         return readingCount == 0 ? Double.NaN : mean;
     }
 
     /** Returns the running population variance, or NaN if no readings yet. */
-    public double getVariance() {
+    public synchronized double getVariance() {
         return readingCount == 0 ? Double.NaN : sumSquaredDiffs / readingCount;
     }
 
@@ -92,23 +92,23 @@ public final class StorageUnit {
      * Returns the running population standard deviation, or NaN if no readings yet.
      * Tiny negative variances caused by floating-point rounding are treated as zero.
      */
-    public double getStandardDeviation() {
+    public synchronized double getStandardDeviation() {
         if (readingCount == 0) {
             return Double.NaN;
         }
         return Math.sqrt(Math.max(0.0, getVariance()));
     }
 
-    public double getMinTemperature() {
+    public synchronized double getMinTemperature() {
         return readingCount == 0 ? Double.NaN : minTemperature;
     }
 
-    public double getMaxTemperature() {
+    public synchronized double getMaxTemperature() {
         return readingCount == 0 ? Double.NaN : maxTemperature;
     }
 
     /** Returns how many readings had the given status. */
-    public int getCount(ComplianceStatus status) {
+    public synchronized int getCount(ComplianceStatus status) {
         return statusCounts.get(status);
     }
 }
