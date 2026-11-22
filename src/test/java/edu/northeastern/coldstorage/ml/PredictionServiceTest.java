@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import edu.northeastern.coldstorage.model.ComplianceStatus;
 import edu.northeastern.coldstorage.model.SensorReading;
+import edu.northeastern.coldstorage.model.StorageUnit;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -88,6 +89,34 @@ class PredictionServiceTest {
         assertEquals(ComplianceStatus.WARNING, service.predictStatus(ROOM_A, 1).get());
         // further ahead the trend reaches 5.7, which is outside the warning margin
         assertEquals(ComplianceStatus.NON_COMPLIANT, service.predictStatus(ROOM_A, 6).get());
+    }
+
+    @Test
+    void forecastsDirectlyFromStorageUnitHistory() {
+        StorageUnit unit = new StorageUnit(ROOM_A);
+        for (double t : new double[] {2.0, 2.5, 3.0, 3.5}) {
+            unit.record(reading(ROOM_A, t), ComplianceStatus.COMPLIANT);
+        }
+        assertEquals(4.0, service.forecast(unit, 1).getAsDouble(), EPS);
+        assertEquals(ComplianceStatus.COMPLIANT, service.forecastStatus(unit, 1).get());
+        assertEquals(ComplianceStatus.WARNING, service.forecastStatus(unit, 2).get());
+    }
+
+    @Test
+    void forecastFromUnitUsesOnlyMostRecentHistory() {
+        // service history size is 4, so the early 50.0 readings must be ignored
+        StorageUnit unit = new StorageUnit(ROOM_A);
+        for (double t : new double[] {50.0, 50.0, 3.0, 3.0, 3.0, 3.0}) {
+            unit.record(reading(ROOM_A, t), ComplianceStatus.COMPLIANT);
+        }
+        assertEquals(3.0, service.forecast(unit, 1).getAsDouble(), EPS);
+    }
+
+    @Test
+    void emptyStorageUnitHasNoForecast() {
+        StorageUnit unit = new StorageUnit(ROOM_A);
+        assertTrue(service.forecast(unit, 1).isEmpty());
+        assertTrue(service.forecastStatus(unit, 1).isEmpty());
     }
 
     @Test

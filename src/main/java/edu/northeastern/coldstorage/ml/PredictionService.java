@@ -2,6 +2,7 @@ package edu.northeastern.coldstorage.ml;
 
 import edu.northeastern.coldstorage.model.ComplianceStatus;
 import edu.northeastern.coldstorage.model.SensorReading;
+import edu.northeastern.coldstorage.model.StorageUnit;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Deque;
@@ -100,6 +101,38 @@ public class PredictionService {
      */
     public synchronized Optional<ComplianceStatus> predictStatus(String roomId, int stepsAhead) {
         OptionalDouble predicted = predict(roomId, stepsAhead);
+        return predicted.isPresent()
+                ? Optional.of(checker.classify(predicted.getAsDouble()))
+                : Optional.empty();
+    }
+
+    /**
+     * Forecasts a room's temperature directly from its {@link StorageUnit}, using the
+     * unit's recent temperatures (at most {@code historySize} of them). This lets views such
+     * as the GUI and web dashboard show a forecast for any unit in a {@code MonitoringReport}
+     * without feeding readings into this service first.
+     *
+     * @return the prediction, or empty if the unit has no readings yet
+     * @throws IllegalArgumentException if stepsAhead is less than 1
+     */
+    public synchronized OptionalDouble forecast(StorageUnit unit, int stepsAhead) {
+        Objects.requireNonNull(unit, "unit must not be null");
+        List<Double> recent = unit.getRecentTemperatures();
+        if (recent.isEmpty()) {
+            return OptionalDouble.empty();
+        }
+        List<Double> window = recent.subList(Math.max(0, recent.size() - historySize), recent.size());
+        return OptionalDouble.of(predictor.predict(window, stepsAhead));
+    }
+
+    /**
+     * Classifies a unit's forecast temperature, so a room heading out of the safe range
+     * can be flagged before it gets there.
+     *
+     * @return the predicted status, or empty if the unit has no readings yet
+     */
+    public synchronized Optional<ComplianceStatus> forecastStatus(StorageUnit unit, int stepsAhead) {
+        OptionalDouble predicted = forecast(unit, stepsAhead);
         return predicted.isPresent()
                 ? Optional.of(checker.classify(predicted.getAsDouble()))
                 : Optional.empty();
