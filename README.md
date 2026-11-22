@@ -84,7 +84,7 @@ Audit log: 2576 entries written to logs/audit.log, integrity check: PASSED
 | Functional Requirement (from Phase 1) | Status      | Where to Find It | Notes |
 |---------------------------------------|-------------|------------------|-------|
 | FR1: Sensor data ingestion            | Complete    | `data/ColdStorageDataReader` (CSV ingestion, two datasets); `sensor/SensorSimulator` (real-time simulation at an adjustable interval, all sensors running concurrently on a `ScheduledExecutorService`); `sensor/SensorFactory` | Historical CSV ingestion is complete, with columns looked up by name and invalid rows skipped and counted. Real-time simulation with multi-threading added in Phase 3. |
-| FR2: Machine learning analytics       | [Partial / Complete] | `ml/StatisticsCalculator`, running statistics in `model/StorageUnit`; [prediction classes, if added] | Mean and variance are computed overall and per room; each `StorageUnit` keeps running statistics. Regression-based temperature prediction is not started. [update if added] |
+| FR2: Machine learning analytics       | Complete    | `ml/StatisticsCalculator`; running statistics in `model/StorageUnit`; `ml/TemperaturePredictor`, `ml/LinearRegressionPredictor`, `ml/MovingAveragePredictor`, `ml/PredictionService` | Mean, variance and standard deviation are computed overall and per room, with running (Welford) statistics in each `StorageUnit`. Temperature prediction uses two interchangeable models: least-squares linear regression over the last 24 readings, which follows trends, and a moving average, which smooths out spikes. Predicted temperatures are classified with `ComplianceChecker`, so a room heading out of the safe range can be flagged early. `PredictionService.meanAbsoluteError` backtests both models on the dataset (about 1.0 °C mean absolute error for each). |
 | FR3: Compliance monitoring            | Complete    | `ml/ComplianceChecker` (COMPLIANT / WARNING / NON-COMPLIANT, contractor 5% rule) | Every reading is classified as COMPLIANT (2.0–4.0 °C), WARNING (within 1.0 °C outside, up to the 5.0 °C breach limit) or NON-COMPLIANT. The contractor fails if more than 5% of readings are non-compliant. |
 | FR4: Web dashboard                    | [Not started / Partial] | [package or files, if added] | A console dashboard stands in for now. Spring Boot and Chart.js are planned. [update if added] |
 | FR5: Alert management                 | [Partial]   | `controller/AlertListener`, `view/ConsoleAlertView`; [acknowledge / silence commands, if added] | Alerts are raised for every unsafe reading and pushed to all listeners (Observer). Visual and audio alarms and acknowledge/silence actions are not started; `Alert` already supports acknowledgement in the model. [update if added] |
@@ -121,7 +121,8 @@ Audit log: 2576 entries written to logs/audit.log, integrity check: PASSED
 | Factory | `SensorFactory.create(SensorType, id, readings)` returns `CsvReplaySensor` or `SpikeSensor` | The simulator depends only on the `Sensor` interface. A new sensor type needs one new class and one new case in the factory, with no other changes. |
 | Decorator | `SpikeSensor` wraps any `Sensor` | Adds temperature spikes to an existing sensor's readings without changing that sensor. |
 | Thread safety (concurrency) | `SensorSimulator` (`ScheduledExecutorService`); `synchronized` methods in `MonitorController` and `StorageUnit` | Several sensors report at the same time. Synchronizing `process()` makes each reading's store, check, alert and audit steps one atomic operation, so no readings are lost and the audit hash chain stays consistent (NFR: concurrency safety). |
-| [Strategy / Command, if added] | [Classes] | [Why] |
+| Strategy | `TemperaturePredictor` interface, implemented by `LinearRegressionPredictor` and `MovingAveragePredictor`; `PredictionService` is the context and can switch models with `setPredictor()` | Different prediction models suit different situations (trends versus noisy spikes). The service depends only on the interface, so models can be compared and swapped at runtime, and a new model needs only one new class. |
+| [Command, if added] | [Classes] | [Why] |
 
 ```mermaid
 classDiagram
@@ -201,7 +202,7 @@ mvn test -Dtest=SensorSimulatorTest   # one test class
 ## Next Steps
 
 - Simulate live sensors with multi-threading (`ScheduledExecutorService`) at adjustable intervals, with a `SensorFactory` (Factory pattern) and thread-safe shared state.
-- Add temperature prediction with linear regression behind a `Predictor` interface (Strategy pattern), so models can be swapped.
+- Feed live simulator readings into `PredictionService` and show forecasts in the GUI and web dashboard; raise an early-warning alert when a room is predicted to leave the safe range.
 - Add operator actions to acknowledge and silence alerts (Command pattern), recorded in the audit log.
 - Build the JavaFX or Swing desktop GUI (MVC) with colour-coded status and an audio alarm.
 - Build the Spring Boot REST API and web dashboard (Tailwind CSS, Chart.js) with temperature trends, variance and compliance history.
@@ -211,7 +212,7 @@ mvn test -Dtest=SensorSimulatorTest   # one test class
 | Member          | Contributions This Phase |
 |-----------------|--------------------------|
 | Aakriti Kaul    | [Specific features, classes or files; tests written; reviews done] |
-| Yazi Zhang      | [Specific features, classes or files; tests written; reviews done] |
+| Yazi Zhang      | Temperature prediction (FR2): `TemperaturePredictor` (Strategy interface), `LinearRegressionPredictor`, `MovingAveragePredictor`, `PredictionService` (per-room bounded history, runtime strategy switching, predicted compliance status, mean-absolute-error backtesting); `LinearRegressionPredictorTest`, `MovingAveragePredictorTest`, `PredictionServiceTest` and `PredictionIntegrationTest` (25 tests, including a concurrency test and an integration test on `IoT.csv`); README rows for FR2 and the Strategy pattern |
 | Anqi Zhou       | [Specific features, classes or files; tests written; reviews done] |
 | Togzhan Usseiin | `Sensor` interface, `CsvReplaySensor`, `SpikeSensor`, `SensorType`, `SensorFactory` (Factory pattern); multi-threaded `SensorSimulator` with `ScheduledExecutorService`; thread safety for `MonitorController` and `StorageUnit`; `SensorFactoryTest` and `SensorSimulatorTest` (integration and concurrency tests); README update to the Phase 3 structure |
 

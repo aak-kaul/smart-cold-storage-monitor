@@ -1,0 +1,142 @@
+package edu.northeastern.coldstorage.ml;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import edu.northeastern.coldstorage.model.ComplianceStatus;
+import edu.northeastern.coldstorage.model.SensorReading;
+import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+
+class PredictionServiceTest {
+
+    private static final double EPS = 1e-9;
+    private static final String ROOM_A = "Cold_Storage_A";
+    private static final String ROOM_B = "Cold_Storage_B";
+    private static final LocalDateTime START = LocalDateTime.of(2024, 1, 1, 0, 0);
+
+    private PredictionService service;
+    private int nextId;
+
+    @BeforeEach
+    void setUp() {
+        service = new PredictionService(new LinearRegressionPredictor(), new ComplianceChecker(), 4);
+        nextId = 1;
+    }
+
+    private SensorReading reading(String room, double temperature) {
+        int id = nextId++;
+        return new SensorReading(id, room, START.plusHours(id), temperature, 50.0);
+    }
+
+    private void recordAll(String room, double... temperatures) {
+        for (double t : temperatures) {
+            service.record(reading(room, t));
+        }
+    }
+
+    @Test
+    void unknownRoomHasNoPrediction() {
+        assertTrue(service.predict(ROOM_A, 1).isEmpty());
+        assertTrue(service.predictStatus(ROOM_A, 1).isEmpty());
+    }
+
+    @Test
+    void predictsUsingCurrentStrategy() {
+        recordAll(ROOM_A, 2.0, 2.5, 3.0, 3.5);
+        assertEquals(4.0, service.predict(ROOM_A, 1).getAsDouble(), EPS);
+    }
+
+    @Test
+    void strategyCanBeSwappedAtRuntime() {
+        recordAll(ROOM_A, 2.0, 2.5, 3.0, 3.5);
+        service.setPredictor(new MovingAveragePredictor(4));
+        assertEquals(2.75, service.predict(ROOM_A, 1).getAsDouble(), EPS);
+        assertEquals("Moving average (4)", service.getPredictor().getName());
+    }
+
+    @Test
+    void historyKeepsOnlyMostRecentReadings() {
+        // history size is 4, so the early 50.0 readings must be dropped
+        recordAll(ROOM_A, 50.0, 50.0, 3.0, 3.0, 3.0, 3.0);
+        assertEquals(4, service.getHistoryCount(ROOM_A));
+        assertEquals(3.0, service.predict(ROOM_A, 1).getAsDouble(), EPS);
+    }
+
+    @Test
+    void roomsAreForecastSeparately() {
+        recordAll(ROOM_A, 3.0, 3.0, 3.0);
+        recordAll(ROOM_B, 8.0, 8.0, 8.0);
+        assertEquals(3.0, service.predict(ROOM_A, 1).getAsDouble(), EPS);
+        assertEquals(8.0, service.predict(ROOM_B, 1).getAsDouble(), EPS);
+        assertEquals(2, service.getRoomIds().size());
+    }
+
+    @Test
+    void risingRoomIsFlaggedBeforeItLeavesSafeRange() {
+        // currently safe (3.0 to 3.9), but the trend reaches 4.2 next: WARNING ahead
+        recordAll(ROOM_A, 3.0, 3.3, 3.6, 3.9);
+        assertEquals(ComplianceStatus.COMPLIANT, new ComplianceChecker().classify(3.9));
+        assertEquals(ComplianceStatus.WARNING, service.predictStatus(ROOM_A, 1).get());
+        // further ahead the trend reaches 5.7, which is outside the warning margin
+        assertEquals(ComplianceStatus.NON_COMPLIANT, service.predictStatus(ROOM_A, 6).get());
+    }
+
+    @Test
+    void meanAbsoluteErrorOfPerfectModelIsZero() {
+        List<Double> line = List.of(1.0, 2.0, 3.0, 4.0, 5.0, 6.0);
+        assertEquals(0.0, PredictionService.meanAbsoluteError(new LinearRegressionPredictor(), line, 3), EPS);
+    }
+
+    @Test
+    void meanAbsoluteErrorMatchesHandCalculation() {
+        // window 2 moving average: predicts 1.5 for 3.0 (error 1.5), 2.5 for 4.0 (error 1.5)
+        List<Double> temps = List.of(1.0, 2.0, 3.0, 4.0);
+        assertEquals(1.5, PredictionService.meanAbsoluteError(new MovingAveragePredictor(2), temps, 2), EPS);
+    }
+
+    @Test
+    void meanAbsoluteErrorIsNaNWithTooFewReadings() {
+        double mae = PredictionService.meanAbsoluteError(new LinearRegressionPredictor(), List.of(1.0, 2.0), 2);
+        assertTrue(Double.isNaN(mae));
+    }
+
+    @Test
+    void invalidArgumentsAreRejected() {
+        ComplianceChecker checker = new ComplianceChecker();
+        LinearRegressionPredictor model = new LinearRegressionPredictor();
+        assertThrows(NullPointerException.class, () -> new PredictionService(null, checker, 4));
+        assertThrows(IllegalArgumentException.class, () -> new PredictionService(model, checker, 1));
+        assertThrows(NullPointerException.class, () -> service.setPredictor(null));
+        recordAll(ROOM_A, 3.0);
+        assertThrows(IllegalArgumentException.class, () -> service.predict(ROOM_A, 0));
+    }
+
+    @Test
+    void concurrentRecordingKeepsHistoryConsistent() throws InterruptedException {
+        PredictionService shared = new PredictionService(
+                new MovingAveragePredictor(100), new ComplianceChecker(), 100);
+        List<SensorReading> readings = new ArrayList<>();
+        for (int i = 0; i < 1000; i++) {
+            readings.add(new SensorReading(i, ROOM_A, START.plusMinutes(i), 3.0, 50.0));
+        }
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        for (SensorReading r : readings) {
+            pool.submit(() -> shared.record(r));
+        }
+        pool.shutdown();
+        assertTrue(pool.awaitTermination(10, TimeUnit.SECONDS));
+
+        assertEquals(100, shared.getHistoryCount(ROOM_A));
+        assertEquals(3.0, shared.predict(ROOM_A, 1).getAsDouble(), EPS);
+        assertFalse(shared.getRoomIds().isEmpty());
+    }
+}
