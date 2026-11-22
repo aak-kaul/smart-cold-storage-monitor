@@ -30,7 +30,7 @@ smart-cold-storage-monitor/
                                          StatisticsCalculator (mean, variance, std deviation)
     controller/                          MonitorController (store, check, alert, report),
                                          AlertListener (Observer interface)
-    view/                                ConsoleAlertView: colour-coded alerts and summary
+    view/                                ConsoleAlertView: color-coded alerts and summary
     logging/                             AuditLogger (Singleton, SHA-256 hash chain), AuditEntry
   src/main/resources/
     IoT.csv                              Kaggle dataset: 4,977 readings, 3 rooms
@@ -97,7 +97,7 @@ Audit log: 2576 entries written to logs/audit.log, integrity check: PASSED
 3. For each reading, `MonitorController` stores it in its room's `StorageUnit`, updating the current temperature, status and running mean and variance.
 4. `ComplianceChecker` classifies the reading as COMPLIANT, WARNING or NON-COMPLIANT.
 5. If the reading is unsafe, an `Alert` is created and every registered `AlertListener` is notified.
-6. `ConsoleAlertView` prints the alert with its colour, and `AuditLogger` records it as a hash-linked entry.
+6. `ConsoleAlertView` prints the alert with its color, and `AuditLogger` records it as a hash-linked entry.
 7. A `MonitoringReport` summarises status counts, statistics, each room's state and the contractor's PASS/FAIL result.
 
 ## Scope and Design Changes Since Phase 1
@@ -179,7 +179,7 @@ classDiagram
   - `StorageUnitTest`: running mean, variance and standard deviation per room; readings from the wrong room rejected
   - `MonitorControllerTest` (7): alerts only for unsafe readings, multiple and removed listeners, per-room statistics, report totals
   - `AuditLoggerTest` (6): singleton, hash linking, detection of edited and deleted entries, alert logging, file output
-  - `ConsoleAlertViewTest`: status colours, alert display limit
+  - `ConsoleAlertViewTest`: status colors, alert display limit
   - `SensorFactoryTest` (4): correct class per sensor type, CSV replay order, spike on every 10th reading, null type rejected
 - **Integration and concurrency tests** (`SensorSimulatorTest`):
   - Three sensors running concurrently through the full pipeline (simulator → controller → compliance check → alerts); checks that all 150 readings are processed and the spike sensor raises exactly 5 alerts
@@ -204,7 +204,7 @@ mvn test -Dtest=SensorSimulatorTest   # one test class
 - Simulate live sensors with multi-threading (`ScheduledExecutorService`) at adjustable intervals, with a `SensorFactory` (Factory pattern) and thread-safe shared state.
 - Feed live simulator readings into `PredictionService` and show forecasts in the GUI and web dashboard; raise an early-warning alert when a room is predicted to leave the safe range.
 - Add operator actions to acknowledge and silence alerts (Command pattern), recorded in the audit log.
-- Build the JavaFX or Swing desktop GUI (MVC) with colour-coded status and an audio alarm.
+- Build the JavaFX or Swing desktop GUI (MVC) with color-coded status and an audio alarm.
 - Build the Spring Boot REST API and web dashboard (Tailwind CSS, Chart.js) with temperature trends, variance and compliance history.
 
 ## Team Contributions (Phase 3)
@@ -213,7 +213,7 @@ mvn test -Dtest=SensorSimulatorTest   # one test class
 |-----------------|--------------------------|
 | Aakriti Kaul    | [Specific features, classes or files; tests written; reviews done] |
 | Yazi Zhang      | Temperature prediction (FR2): `TemperaturePredictor` (Strategy interface), `LinearRegressionPredictor`, `MovingAveragePredictor`, `PredictionService` (per-room bounded history, runtime strategy switching, predicted compliance status, mean-absolute-error backtesting); `LinearRegressionPredictorTest`, `MovingAveragePredictorTest`, `PredictionServiceTest` and `PredictionIntegrationTest` (25 tests, including a concurrency test and an integration test on `IoT.csv`); README rows for FR2 and the Strategy pattern |
-| Anqi Zhou       | **Desktop and web dashboards:** The view layer now includes a Swing desktop dashboard and a web dashboard, in addition to the console output. The desktop dashboard (`DesktopDashboard`) shows storage rooms and alerts in two tables (`RoomTableModel`, `AlertTableModel`), with status colours applied by `StatusCellRenderer`. The web dashboard is served by `DashboardServer`, which sends `dashboard.html` to the browser and provides room and alert data as JSON created by `DashboardJson`. Tests are added in `DesktopTableModelTest`, `DashboardJsonTest` and `DashboardServerTest`. |
+| Anqi Zhou       | The view layer now includes a Swing desktop dashboard and a web dashboard, in addition to the console output. The desktop dashboard `DesktopDashboard` shows storage rooms and alerts in two tables `RoomTableModel` and `AlertTableModel`, with status colors applied by `StatusCellRenderer`. The web dashboard is served by `DashboardServer`, which sends `dashboard.html` to the browser and provides room and alert data as JSON created by `DashboardJson`. Tests are added in `DesktopTableModelTest`, `DashboardJsonTest` and `DashboardServerTest`. |
 | Togzhan Usseiin | `Sensor` interface, `CsvReplaySensor`, `SpikeSensor`, `SensorType`, `SensorFactory` (Factory pattern); multi-threaded `SensorSimulator` with `ScheduledExecutorService`; thread safety for `MonitorController` and `StorageUnit`; `SensorFactoryTest` and `SensorSimulatorTest` (integration and concurrency tests); README update to the Phase 3 structure |
 
 ### Phase 2 Contributions
@@ -222,5 +222,5 @@ mvn test -Dtest=SensorSimulatorTest   # one test class
 |-----------------|---------------|
 | Aakriti Kaul    | Created the GitHub repository, Maven project and package structure; integrated the Kaggle dataset; implemented the core use case: `SensorReading`, `StorageUnit`, `Alert`, `ComplianceStatus`, `MonitoringReport`, `ColdStorageDataReader`, `ComplianceChecker`, `StatisticsCalculator`, `MonitorController`, `AlertListener`, `ConsoleAlertView`, `AuditLogger`, `AuditEntry` and `Main`; wrote the 33 JUnit tests; wrote the README |
 | Yazi Zhang      | Wrote `StorageUnitTest`, which verifies the running mean and variance for each storage room and checks that readings from the wrong room are rejected; added a `getStandardDeviation()` method to `StorageUnit` with tests |
-| Anqi Zhou       | Wrote `ConsoleAlertViewTest`, which verifies that alerts are printed with their status colour and that the alert display limit and "... and N more alerts" message work correctly; improved the layout of the console monitoring summary |
+| Anqi Zhou       | Wrote `ConsoleAlertViewTest`, which verifies that alerts are printed with their status color and that the alert display limit and "... and N more alerts" message work correctly; improved the layout of the console monitoring summary |
 | Togzhan Usseiin | Extended `ColdStorageDataReader` to support the `cold_storage_high_frequency.csv` dataset, with tests; added tests for CSV files that contain a byte-order mark or extra spaces around values |
